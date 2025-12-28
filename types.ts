@@ -1,3 +1,4 @@
+
 export enum Rank {
   RECRUIT = 'RECRUIT',
   SOLDIER = 'SOLDIER',
@@ -21,6 +22,7 @@ export interface SessionLog {
   zones: string[];
   notes?: string;
   completed: boolean;
+  uvIndex?: number; // Histórico de UV
 }
 
 export interface Achievement {
@@ -38,6 +40,7 @@ export interface UserSettings {
   sessionValueLegs: number; // Market value
   sessionValueTorso: number; // Market value
   darkMode: boolean; // Always true practically, but good for schema
+  vibrationIntensity: 'LOW' | 'HIGH'; // New Setting
 }
 
 export interface AppState {
