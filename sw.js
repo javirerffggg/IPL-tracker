@@ -1,31 +1,21 @@
-const CACHE_NAME = 'ipl-elite-v2.5';
-const ASSETS_TO_CACHE = [
+const CACHE_NAME = 'ipl-elite-v3.0-build';
+
+// Static App Shell - Files we know will exist and be constant-ish
+const APP_SHELL = [
   './',
   './index.html',
   './manifest.json',
-  './index.tsx',
-  './App.tsx',
-  './types.ts',
-  './constants.ts',
-  './services/geminiService.ts',
-  './services/weatherService.ts',
-  './components/SessionMode.tsx',
-  './components/CalendarView.tsx',
-  './components/BodyHeatmap.tsx'
 ];
 
-// URLs externas críticas para funcionamiento offline
 const EXTERNAL_ASSETS = [
   'https://cdn.tailwindcss.com',
   'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600;800&display=swap',
-  'https://esm.sh/'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      // Intentar cachear assets locales, si falla uno no detiene el SW pero es warning
-      return cache.addAll(ASSETS_TO_CACHE).catch(err => console.warn('Algunos assets locales no se cargaron:', err));
+      return cache.addAll(APP_SHELL);
     })
   );
   self.skipWaiting();
@@ -48,40 +38,47 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(event.request.url);
 
-  // 1. Estrategia Stale-While-Revalidate para recursos externos (Fuentes, ESM, CDN)
-  if (EXTERNAL_ASSETS.some(asset => url.href.startsWith(asset) || url.hostname.includes('esm.sh'))) {
+  // 1. External Assets (Fonts, CDN) -> Stale While Revalidate
+  if (EXTERNAL_ASSETS.some(asset => url.href.startsWith(asset))) {
     event.respondWith(
       caches.open(CACHE_NAME).then(async (cache) => {
-        const cachedResponse = await cache.match(event.request);
-        const fetchPromise = fetch(event.request).then((networkResponse) => {
-          if (networkResponse && networkResponse.status === 200) {
-            cache.put(event.request, networkResponse.clone());
-          }
-          return networkResponse;
-        }).catch(() => {
-           // Si falla red y no hay caché, retornar nada (o fallback)
-        });
-        return cachedResponse || fetchPromise;
+        const cached = await cache.match(event.request);
+        const fetched = fetch(event.request).then(resp => {
+           if(resp.status === 200) cache.put(event.request, resp.clone());
+           return resp;
+        }).catch(() => null);
+        return cached || fetched;
       })
     );
     return;
   }
 
-  // 2. Estrategia Network First para APIs (OpenMeteo, Gemini)
-  if (url.hostname.includes('open-meteo.com') || url.hostname.includes('generativelanguage.googleapis.com')) {
+  // 2. JS/CSS Assets (Hashed filenames in build) -> Cache First
+  // Since hash changes with content, we can cache forever.
+  if (url.pathname.endsWith('.js') || url.pathname.endsWith('.css') || url.pathname.endsWith('.png') || url.pathname.endsWith('.svg')) {
+     event.respondWith(
+        caches.open(CACHE_NAME).then(async cache => {
+           const cached = await cache.match(event.request);
+           if (cached) return cached;
+           return fetch(event.request).then(resp => {
+              if (resp.status === 200) cache.put(event.request, resp.clone());
+              return resp;
+           });
+        })
+     );
+     return;
+  }
+
+  // 3. Navigation -> Network First, fall back to index.html (SPA)
+  if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request).catch(() => {
-        // Fallback opcional o simplemente fallar
-        return new Response(JSON.stringify({ error: 'Offline' }), { headers: { 'Content-Type': 'application/json' } });
+        return caches.match('./index.html');
       })
     );
     return;
   }
 
-  // 3. Estrategia Cache First para todo lo demás (App Shell local)
-  event.respondWith(
-    caches.match(event.request).then((response) => {
-      return response || fetch(event.request);
-    })
-  );
+  // Default
+  event.respondWith(fetch(event.request));
 });
