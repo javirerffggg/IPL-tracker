@@ -1,17 +1,18 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Settings, Shield, Activity, MessageSquare, Menu, X, Trophy, Trash2, Calendar as CalendarIcon, Download } from 'lucide-react';
-import { INITIAL_START_DATE, INITIAL_ACHIEVEMENTS, RANKS_THRESHOLDS, ZONES, PHASE_CONFIG, RANK_TRANSLATIONS, PHASE_TRANSLATIONS, WEEKLY_INTEL } from './constants';
+import { Settings, Shield, Activity, MessageSquare, Menu, X, Trophy, Trash2, Calendar as CalendarIcon, Download, Zap, RefreshCw, Power, Battery } from 'lucide-react';
+import { INITIAL_START_DATE, INITIAL_ACHIEVEMENTS, RANKS_THRESHOLDS, ZONES, PHASE_CONFIG, RANK_TRANSLATIONS, PHASE_TRANSLATIONS } from './constants';
 import { AppState, Rank, Phase, SessionLog } from './types';
 import { SessionMode } from './components/SessionMode';
 import { CalendarView } from './components/CalendarView';
 import { BodyHeatmap } from './components/BodyHeatmap';
-import { getMissionBriefing, chatWithIntelOfficer } from './services/geminiService';
+import { chatWithIntelOfficer } from './services/geminiService';
+import { getContextAwareBriefing } from './services/briefingService';
 import { fetchWeatherData } from './services/weatherService';
 
 // --- Improved Components ---
 
 // HudCard with Tactical Corners
-const HudCard: React.FC<{ children: React.ReactNode; className?: string; title?: string }> = ({ children, className = '', title }) => (
+const HudCard: React.FC<{ children: React.ReactNode; className?: string; title?: string; rightElement?: React.ReactNode }> = ({ children, className = '', title, rightElement }) => (
   <div className={`relative bg-tactical-800 border border-gray-800 p-4 ${className}`}>
     {/* Decorative Corners */}
     <div className="absolute top-0 left-0 w-2 h-2 border-l-2 border-t-2 border-tactical-green"></div>
@@ -19,9 +20,10 @@ const HudCard: React.FC<{ children: React.ReactNode; className?: string; title?:
     <div className="absolute bottom-0 left-0 w-2 h-2 border-l-2 border-b-2 border-tactical-green"></div>
     <div className="absolute bottom-0 right-0 w-2 h-2 border-r-2 border-b-2 border-tactical-green"></div>
     
-    {title && (
-      <div className="mb-3 border-b border-gray-800 pb-1">
-         <h3 className="text-xs font-mono text-tactical-green uppercase tracking-widest">{title}</h3>
+    {(title || rightElement) && (
+      <div className="mb-3 border-b border-gray-800 pb-1 flex justify-between items-center">
+         {title && <h3 className="text-xs font-mono text-tactical-green uppercase tracking-widest">{title}</h3>}
+         {rightElement}
       </div>
     )}
     {children}
@@ -29,14 +31,17 @@ const HudCard: React.FC<{ children: React.ReactNode; className?: string; title?:
 );
 
 // Retro Segmented Progress Bar
-const RetroProgressBar: React.FC<{ value: number; max: number; label?: string; color?: string }> = ({ value, max, label, color = 'bg-tactical-green' }) => {
+const RetroProgressBar: React.FC<{ value: number; max: number; label?: string; color?: string; subLabel?: string }> = ({ value, max, label, color = 'bg-tactical-green', subLabel }) => {
   const pct = Math.min(100, Math.max(0, (value / max) * 100));
   const segments = 20;
   const filledSegments = Math.round((pct / 100) * segments);
 
   return (
     <div className="w-full">
-      {label && <div className="flex justify-between text-[10px] text-gray-500 mb-1 font-mono uppercase tracking-wider"><span>{label}</span><span>{Math.round(pct)}%</span></div>}
+      <div className="flex justify-between text-[10px] text-gray-500 mb-1 font-mono uppercase tracking-wider">
+        <span>{label}</span>
+        <span>{subLabel || `${Math.round(pct)}%`}</span>
+      </div>
       <div className="flex gap-0.5 h-3">
         {Array.from({ length: segments }).map((_, i) => (
           <div 
@@ -104,7 +109,8 @@ export default function App() {
         sessionValueLegs: 60,
         sessionValueTorso: 50,
         darkMode: true,
-        vibrationIntensity: 'HIGH'
+        vibrationIntensity: 'HIGH',
+        isPaused: false
       },
       logs: [],
       achievements: INITIAL_ACHIEVEMENTS,
@@ -183,11 +189,36 @@ export default function App() {
     if (weekIndex >= 12) phase = Phase.TRANSITION;
     if (weekIndex >= 24) phase = Phase.MAINTENANCE;
 
+    // Calculate phase specific stats
+    let currentPhaseWeek = 0;
+    let totalPhaseWeeks = 0;
+    let nextPhaseName = '';
+    
+    if (phase === Phase.ATTACK) {
+        currentPhaseWeek = weekIndex + 1; // 1-based for display
+        totalPhaseWeeks = 12;
+        nextPhaseName = 'TRANSICIÓN';
+    } else if (phase === Phase.TRANSITION) {
+        currentPhaseWeek = weekIndex - 11;
+        totalPhaseWeeks = 12;
+        nextPhaseName = 'MANTENIMIENTO';
+    } else {
+        currentPhaseWeek = weekIndex - 23;
+        totalPhaseWeeks = 52; // Symbolic
+        nextPhaseName = 'REINICIO';
+    }
+
+    const weeksUntilNextPhase = totalPhaseWeeks - currentPhaseWeek;
+
     let isActiveWeek = true;
     let statusMessage = "OPERATIVO";
     let isShoulderWeek = false;
 
-    if (phase === Phase.ATTACK) {
+    if (state.settings.isPaused) {
+        isActiveWeek = false;
+        statusMessage = "PROTOCOLO EN PAUSA";
+    }
+    else if (phase === Phase.ATTACK) {
        isShoulderWeek = (weekIndex % 3 === 0);
     } 
     else if (phase === Phase.TRANSITION) {
@@ -228,18 +259,37 @@ export default function App() {
         }
     }
 
-    return { phase, weekIndex, isActiveWeek, nextSessionData, statusMessage };
-  }, [state.settings.startDate]);
+    return { 
+        phase, 
+        weekIndex, 
+        isActiveWeek, 
+        nextSessionData, 
+        statusMessage,
+        currentPhaseWeek,
+        totalPhaseWeeks,
+        weeksUntilNextPhase,
+        nextPhaseName
+    };
+  }, [state.settings.startDate, state.settings.isPaused]);
 
-  // Streak & Greeting
+  // Streak, Body Load & Greeting
   const streak = useMemo(() => {
     if (state.logs.length === 0) return 0;
-    // Simple logic: check continuity of weekly/bi-weekly plans is complex.
-    // Instead, just "Days since last op" for display
     const lastLog = new Date(state.logs[0].date);
     const now = new Date();
     const diff = Math.floor((now.getTime() - lastLog.getTime()) / (1000*3600*24));
     return diff;
+  }, [state.logs]);
+
+  const bodyLoad = useMemo(() => {
+      if (state.logs.length === 0) return { status: 'OPTIMO', color: 'text-tactical-green', bg: 'bg-tactical-green' };
+      const lastLog = new Date(state.logs[0].date);
+      const now = new Date();
+      const hoursDiff = (now.getTime() - lastLog.getTime()) / (1000 * 60 * 60);
+      
+      if (hoursDiff < 24) return { status: 'CRÍTICO', color: 'text-red-500', bg: 'bg-red-500' };
+      if (hoursDiff < 48) return { status: 'RECUPERANDO', color: 'text-yellow-500', bg: 'bg-yellow-500' };
+      return { status: 'LISTO', color: 'text-tactical-green', bg: 'bg-tactical-green' };
   }, [state.logs]);
 
   const greeting = useMemo(() => {
@@ -255,22 +305,23 @@ export default function App() {
   }, [state]);
 
   useEffect(() => {
+    // Immediate Initial Load based on current state (no network needed)
+    const initialBriefing = getContextAwareBriefing(timeline.phase, new Date().getDay(), 0);
+    setBriefing(initialBriefing);
+
+    // Update with weather context if available
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(async (pos) => {
         const data = await fetchWeatherData(pos.coords.latitude, pos.coords.longitude);
         if (data) {
           setWeather({ uv: data.uvIndex, temp: data.temperature });
-          const specificIntel = WEEKLY_INTEL[timeline.weekIndex];
-          if (specificIntel) {
-            setBriefing(specificIntel);
-          } else {
-            const text = await getMissionBriefing(rank, timeline.phase, data.uvIndex, timeline.nextSessionData.type);
-            setBriefing(text);
-          }
+          // Re-fetch briefing with accurate UV data
+          const updatedBriefing = getContextAwareBriefing(timeline.phase, new Date().getDay(), data.uvIndex);
+          setBriefing(updatedBriefing);
         }
       });
     }
-  }, [rank, timeline, state.logs]);
+  }, [rank, timeline.phase]);
 
   // Handlers
   const handleSessionComplete = (duration: number, zones: string[]) => {
@@ -318,6 +369,13 @@ export default function App() {
     window.location.reload();
   };
 
+  const togglePause = () => {
+    setState(prev => ({
+        ...prev,
+        settings: { ...prev.settings, isPaused: !prev.settings.isPaused }
+    }));
+  };
+
   // Swipe Navigation
   const handleTouchStart = (e: React.TouchEvent) => { touchStartX.current = e.targetTouches[0].clientX; };
   const handleTouchEnd = (e: React.TouchEvent) => {
@@ -334,6 +392,13 @@ export default function App() {
         }
     }
   };
+
+  // Icons based on phase
+  const PhaseIcon = useMemo(() => {
+    if (timeline.phase === Phase.ATTACK) return Zap;
+    if (timeline.phase === Phase.TRANSITION) return RefreshCw;
+    return Shield;
+  }, [timeline.phase]);
 
   // Views
   if (sessionActive) {
@@ -391,28 +456,58 @@ export default function App() {
 
         {view === 'DASHBOARD' && (
           <>
-            {/* Status Card */}
+            {/* Row 1: Rank & Body Load */}
             <div className="grid grid-cols-2 gap-4">
               <HudCard title="RANGO">
-                <div className="text-2xl font-bold text-white font-mono">{RANK_TRANSLATIONS[rank]}</div>
+                <div className="text-2xl font-bold text-white font-mono truncate">{RANK_TRANSLATIONS[rank]}</div>
                 <div className="text-xs text-gray-500 font-mono mt-1">{state.logs.length} MISIONES</div>
               </HudCard>
-              <HudCard title="FASE">
-                <div className="text-xl font-bold text-tactical-green font-mono">{timeline.phase}</div>
-                <div className="text-xs text-gray-500 font-mono mt-1">SEMANA {timeline.weekIndex + 1}</div>
+              
+              <HudCard title="CARGA BIOLÓGICA">
+                  <div className={`text-xl font-bold font-mono ${bodyLoad.color}`}>{bodyLoad.status}</div>
+                  <div className="flex items-center gap-2 mt-2">
+                      <div className={`w-3 h-3 rounded-full ${bodyLoad.bg} animate-pulse`}></div>
+                      <span className="text-[10px] text-gray-500 font-mono">ESTADO PIEL</span>
+                  </div>
               </HudCard>
             </div>
 
-            {/* Streak Counter */}
-             <div className="bg-black border border-gray-800 p-2 flex justify-between items-center rounded-sm">
-                 <span className="text-xs text-gray-500 font-mono px-2">ULTIMA OPS:</span>
-                 <span className="font-mono text-red-500 font-bold bg-red-900/10 px-2 py-1 rounded text-sm tracking-widest">
-                     {streak} DÍAS ATRÁS
-                 </span>
-             </div>
+            {/* Row 2: Phase Command Center */}
+            <HudCard 
+                title="ESTADO DE FASE" 
+                className="border-l-4 border-l-tactical-green"
+                rightElement={
+                    <button onClick={togglePause} className={`${state.settings.isPaused ? 'text-red-500' : 'text-gray-600 hover:text-white'}`}>
+                        <Power size={18} />
+                    </button>
+                }
+            >
+                <div className="flex items-center gap-4 mb-4">
+                    <div className={`p-3 rounded-sm border ${state.settings.isPaused ? 'border-red-900 bg-red-900/10 text-red-500' : 'border-tactical-green bg-tactical-green/10 text-tactical-green'}`}>
+                        <PhaseIcon size={28} strokeWidth={1.5} />
+                    </div>
+                    <div>
+                        <div className={`text-2xl font-bold font-mono tracking-tight ${state.settings.isPaused ? 'text-red-500' : 'text-white'}`}>
+                            {state.settings.isPaused ? 'PAUSADO' : timeline.phase}
+                        </div>
+                        <div className="text-[10px] font-mono text-gray-400">
+                             {state.settings.isPaused ? 'PROTOCOLO DETENIDO' : `HITO: ${timeline.nextPhaseName} (${timeline.weeksUntilNextPhase} SEM)`}
+                        </div>
+                    </div>
+                </div>
+
+                {!state.settings.isPaused && (
+                    <RetroProgressBar 
+                        value={timeline.currentPhaseWeek} 
+                        max={timeline.totalPhaseWeeks} 
+                        label={`SEMANA ${timeline.currentPhaseWeek} DE ${timeline.totalPhaseWeeks}`}
+                        subLabel={`${Math.round((timeline.currentPhaseWeek/timeline.totalPhaseWeeks)*100)}%`}
+                    />
+                )}
+            </HudCard>
 
             {/* Briefing */}
-            <HudCard title="BRIEFING" className="border-l-4 border-l-tactical-green">
+            <HudCard title="BRIEFING">
               <div className="text-sm leading-relaxed text-gray-300 mb-2 font-mono">
                 {briefing}
               </div>

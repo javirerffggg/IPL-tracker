@@ -41,6 +41,7 @@ export interface UserSettings {
   sessionValueTorso: number; // Market value
   darkMode: boolean; // Always true practically, but good for schema
   vibrationIntensity: 'LOW' | 'HIGH'; // New Setting
+  isPaused: boolean; // Manual Override for holidays/sickness
 }
 
 export interface AppState {
