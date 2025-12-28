@@ -352,18 +352,20 @@ export default function App() {
         className="min-h-screen font-sans pb-24 selection:bg-tactical-green selection:text-black pt-safe"
         onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}
     >
-      {/* Top Bar */}
-      <header className="fixed top-0 w-full bg-tactical-900/90 backdrop-blur border-b border-gray-800 z-40 px-4 py-3 pt-safe flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <Shield className="text-tactical-green" size={24} />
-          <div>
-              <span className="font-mono font-bold tracking-tighter text-lg block leading-none">IPL ELITE</span>
-              <span className="text-[9px] text-gray-500 font-mono tracking-widest">SYS.ONLINE</span>
+      {/* Top Bar - Now Relative/Normal Flow to scroll away */}
+      <header className="w-full bg-tactical-900/90 backdrop-blur border-b border-gray-800 px-4 py-3 pt-safe">
+        <div className="max-w-lg mx-auto w-full flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <Shield className="text-tactical-green" size={24} />
+            <div>
+                <span className="font-mono font-bold tracking-tighter text-lg block leading-none">IPL ELITE</span>
+                <span className="text-[9px] text-gray-500 font-mono tracking-widest">SYS.ONLINE</span>
+            </div>
           </div>
+          <button onClick={() => setMenuOpen(!menuOpen)} className="p-2 text-gray-400">
+            {menuOpen ? <X /> : <Menu />}
+          </button>
         </div>
-        <button onClick={() => setMenuOpen(!menuOpen)} className="p-2 text-gray-400">
-          {menuOpen ? <X /> : <Menu />}
-        </button>
       </header>
 
       {/* Menu Overlay */}
@@ -377,8 +379,8 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Content Area */}
-      <main className="pt-20 px-4 max-w-lg mx-auto space-y-6">
+      {/* Main Content Area - Centered Container */}
+      <main className="pt-4 px-4 max-w-lg mx-auto space-y-6">
         
         {/* Greeting Banner */}
         {view === 'DASHBOARD' && (
@@ -639,23 +641,25 @@ export default function App() {
       </main>
 
       {/* Bottom Nav */}
-      <nav className="fixed bottom-0 w-full bg-black border-t border-gray-800 flex justify-around p-2 pb-safe z-40 bg-opacity-95 backdrop-blur-md">
-        {[
-            { id: 'DASHBOARD', icon: Activity, label: 'OPS' },
-            { id: 'PLAN', icon: CalendarIcon, label: 'PLAN' },
-            { id: 'INTEL', icon: MessageSquare, label: 'INTEL' },
-            { id: 'PROFILE', icon: Trophy, label: 'RECORD' },
-            { id: 'SETTINGS', icon: Settings, label: 'CONF' },
-        ].map((item) => (
-            <button 
-                key={item.id}
-                onClick={() => setView(item.id as any)} 
-                className={`flex flex-col items-center p-2 rounded transition-colors ${view === item.id ? 'text-tactical-green' : 'text-gray-600'}`}
-            >
-                <item.icon size={20} strokeWidth={view === item.id ? 2.5 : 1.5} />
-                <span className="text-[9px] mt-1 font-mono tracking-wider">{item.label}</span>
-            </button>
-        ))}
+      <nav className="fixed bottom-0 w-full bg-black border-t border-gray-800 pb-safe z-40 bg-opacity-95 backdrop-blur-md">
+        <div className="max-w-lg mx-auto flex justify-around p-2">
+          {[
+              { id: 'DASHBOARD', icon: Activity, label: 'OPS' },
+              { id: 'PLAN', icon: CalendarIcon, label: 'PLAN' },
+              { id: 'INTEL', icon: MessageSquare, label: 'INTEL' },
+              { id: 'PROFILE', icon: Trophy, label: 'RECORD' },
+              { id: 'SETTINGS', icon: Settings, label: 'CONF' },
+          ].map((item) => (
+              <button 
+                  key={item.id}
+                  onClick={() => setView(item.id as any)} 
+                  className={`flex flex-col items-center p-2 rounded transition-colors ${view === item.id ? 'text-tactical-green' : 'text-gray-600'}`}
+              >
+                  <item.icon size={20} strokeWidth={view === item.id ? 2.5 : 1.5} />
+                  <span className="text-[9px] mt-1 font-mono tracking-wider">{item.label}</span>
+              </button>
+          ))}
+        </div>
       </nav>
     </div>
   );
