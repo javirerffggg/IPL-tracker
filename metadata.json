@@ -1,0 +1,8 @@
+{
+  "name": "IPL Tracker Elite",
+  "description": "Aplicación táctica de biohacking para optimizar tratamientos IPL en casa. Incluye planificación de grado militar, seguimiento de ROI e informes de misión impulsados por IA.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}
