@@ -1,10 +1,10 @@
-const CACHE_NAME = 'ipl-elite-v3.0-build';
+const CACHE_NAME = 'ipl-elite-v3.1-root';
 
-// Static App Shell - Files we know will exist and be constant-ish
+// Static App Shell - Absolute paths for Vercel
 const APP_SHELL = [
-  './',
-  './index.html',
-  './manifest.json',
+  '/',
+  '/index.html',
+  '/manifest.json',
 ];
 
 const EXTERNAL_ASSETS = [
@@ -54,7 +54,6 @@ self.addEventListener('fetch', (event) => {
   }
 
   // 2. JS/CSS Assets (Hashed filenames in build) -> Cache First
-  // Since hash changes with content, we can cache forever.
   if (url.pathname.endsWith('.js') || url.pathname.endsWith('.css') || url.pathname.endsWith('.png') || url.pathname.endsWith('.svg')) {
      event.respondWith(
         caches.open(CACHE_NAME).then(async cache => {
@@ -73,7 +72,10 @@ self.addEventListener('fetch', (event) => {
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request).catch(() => {
-        return caches.match('./index.html');
+        // Fallback to absolute path index.html
+        return caches.match('/index.html').then(response => {
+            return response || caches.match('/');
+        });
       })
     );
     return;
