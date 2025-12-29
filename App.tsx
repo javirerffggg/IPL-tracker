@@ -332,7 +332,7 @@ export default function App() {
       durationSeconds: duration,
       zones,
       completed: true,
-      uvIndex: weather?.uvIndex
+      uvIndex: weather?.uv
     };
 
     const newAchievements = [...state.achievements];
