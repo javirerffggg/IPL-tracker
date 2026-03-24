@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, Square, Camera, Smartphone, ArrowLeft, ThermometerSnowflake, AlertTriangle } from 'lucide-react';
+import { Play, Pause, Square, Camera, Smartphone, ThermometerSnowflake, AlertTriangle, XOctagon } from 'lucide-react';
 
 interface SessionModeProps {
   onComplete: (duration: number, zones: string[]) => void;
@@ -16,15 +16,12 @@ export const SessionMode: React.FC<SessionModeProps> = ({ onComplete, onCancel, 
   const [cameraMode, setCameraMode] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  
   const [metronomeActive, setMetronomeActive] = useState(false);
   const metronomeRef = useRef<number | null>(null);
 
-  // --- Haptic Engine ---
   const vibrate = (pattern: number | number[]) => {
     if (navigator.vibrate) {
       if (vibrationIntensity === 'LOW') {
-        // Reduce intensity by using shorter patterns or relying on single pulses
         const lowPattern = Array.isArray(pattern) ? pattern.map(p => Math.max(10, p / 2)) : Math.max(10, pattern / 2);
         navigator.vibrate(lowPattern);
       } else {
@@ -36,38 +33,27 @@ export const SessionMode: React.FC<SessionModeProps> = ({ onComplete, onCancel, 
   useEffect(() => {
     let interval: number;
     if (isActive && !isPanic && !showAbortModal) {
-      interval = window.setInterval(() => {
-        setSeconds(s => s + 1);
-      }, 1000);
+      interval = window.setInterval(() => { setSeconds(s => s + 1); }, 1000);
     }
     return () => clearInterval(interval);
   }, [isActive, isPanic, showAbortModal]);
 
   useEffect(() => {
     if (metronomeActive && isActive && !isPanic && !showAbortModal) {
-      metronomeRef.current = window.setInterval(() => {
-        vibrate(30);
-      }, 3000); 
+      metronomeRef.current = window.setInterval(() => { vibrate(30); }, 3000);
     } else {
       if (metronomeRef.current) clearInterval(metronomeRef.current);
     }
-    return () => {
-      if (metronomeRef.current) clearInterval(metronomeRef.current);
-    };
+    return () => { if (metronomeRef.current) clearInterval(metronomeRef.current); };
   }, [metronomeActive, isActive, isPanic, showAbortModal]);
 
   const toggleCamera = async () => {
     if (cameraMode) {
-      if (cameraStream) {
-        cameraStream.getTracks().forEach(track => track.stop());
-        setCameraStream(null);
-      }
+      if (cameraStream) { cameraStream.getTracks().forEach(track => track.stop()); setCameraStream(null); }
       setCameraMode(false);
     } else {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { facingMode: 'environment' } 
-        });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
         setCameraStream(stream);
         setCameraMode(true);
       } catch (err) {
@@ -77,40 +63,19 @@ export const SessionMode: React.FC<SessionModeProps> = ({ onComplete, onCancel, 
   };
 
   useEffect(() => {
-    if (videoRef.current && cameraStream) {
-      videoRef.current.srcObject = cameraStream;
-    }
+    if (videoRef.current && cameraStream) { videoRef.current.srcObject = cameraStream; }
   }, [cameraStream]);
 
-  const handleStart = () => {
-    setIsActive(true);
-    vibrate(200);
-  };
-
-  const handlePause = () => {
-    setIsActive(false);
-    vibrate([50, 50]);
-  };
-
-  const handlePanic = () => {
-    setIsPanic(true);
-    setIsActive(false);
-    vibrate([500, 100, 500]);
-  };
-
-  const resolvePanic = () => {
-    setIsPanic(false);
-  };
-
-  const handleComplete = () => {
-    vibrate([100, 50, 100, 50, 200]);
-    onComplete(seconds, targetZones);
-  };
+  const handleStart = () => { setIsActive(true); vibrate(200); };
+  const handlePause = () => { setIsActive(false); vibrate([50, 50]); };
+  const handlePanic = () => { setIsPanic(true); setIsActive(false); vibrate([500, 100, 500]); };
+  const resolvePanic = () => { setIsPanic(false); };
+  const handleComplete = () => { vibrate([100, 50, 100, 50, 200]); onComplete(seconds, targetZones); };
 
   const attemptCancel = () => {
     if (seconds > 0 && !showAbortModal) {
         setShowAbortModal(true);
-        setIsActive(false); // Pause timer
+        setIsActive(false);
     } else {
         onCancel();
     }
@@ -125,7 +90,7 @@ export const SessionMode: React.FC<SessionModeProps> = ({ onComplete, onCancel, 
   return (
     <div className="fixed inset-0 bg-black z-50 flex justify-center">
       <div className="w-full max-w-lg h-full flex flex-col font-mono relative bg-black shadow-2xl border-x border-gray-900">
-        
+
         {/* Abort Modal */}
         {showAbortModal && (
             <div className="absolute inset-0 z-[70] bg-black/90 flex items-center justify-center p-6 backdrop-blur-sm">
@@ -148,30 +113,35 @@ export const SessionMode: React.FC<SessionModeProps> = ({ onComplete, onCancel, 
             <ThermometerSnowflake size={64} className="text-white mb-4" />
             <h2 className="text-3xl font-bold text-white mb-2">ENFRIAMIENTO ACTIVO</h2>
             <p className="text-red-100 text-lg mb-8">ALTO EL FUEGO. Aplica frío local. Respira profundamente.</p>
-            <button 
-                onClick={resolvePanic}
-                className="bg-white text-red-900 px-8 py-4 rounded font-bold text-xl uppercase tracking-widest shadow-lg"
-            >
+            <button onClick={resolvePanic} className="bg-white text-red-900 px-8 py-4 rounded font-bold text-xl uppercase tracking-widest shadow-lg">
                 REANUDAR MISIÓN
             </button>
             </div>
         )}
 
         {/* HUD Header */}
-        <div className="bg-tactical-900 border-b border-tactical-green/30 pt-safe px-4 pb-2 flex justify-between items-center text-tactical-green shrink-0">
-            <button onClick={attemptCancel} className="p-2 border border-tactical-green/50 rounded hover:bg-tactical-green/20">
-            <ArrowLeft size={20} />
+        <div className="bg-tactical-900 border-b border-tactical-green/30 pt-safe px-4 pb-3 flex justify-between items-center text-tactical-green shrink-0">
+            {/* Explicit ABORTAR button instead of ambiguous back arrow */}
+            <button
+              onClick={attemptCancel}
+              className="flex items-center gap-1 px-3 py-2 border border-red-900/60 bg-red-900/10 text-red-400 rounded text-xs font-bold tracking-widest hover:bg-red-900/30 transition-colors"
+            >
+              <XOctagon size={14} />
+              <span>ABORTAR</span>
             </button>
-            <div className="text-2xl font-bold tracking-widest animate-pulse-slow font-mono">
-            {formatTime(seconds)}
+
+            {/* Larger, prominent timer */}
+            <div className="text-5xl font-black tracking-widest font-mono text-tactical-green [text-shadow:0_0_20px_rgba(16,185,129,0.6)]">
+              {formatTime(seconds)}
             </div>
+
             <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-red-500 animate-blink"></div>
                 <div className="text-xs text-emerald-700 font-bold">REC</div>
             </div>
         </div>
 
-        {/* Main Viewport (Visuals) */}
+        {/* Main Viewport */}
         <div className="flex-1 relative bg-tactical-800 overflow-hidden flex flex-col items-center justify-center">
             {cameraMode ? (
             <div className="relative w-full h-full">
@@ -200,24 +170,28 @@ export const SessionMode: React.FC<SessionModeProps> = ({ onComplete, onCancel, 
 
         {/* Tactical Control Deck */}
         <div className="bg-tactical-900 border-t-2 border-tactical-green/50 p-4 pb-safe h-[45vh] flex flex-col gap-3 shrink-0 relative">
-            
+
             {/* Tools Row */}
             <div className="flex gap-3 h-16 shrink-0">
-                <button 
+                <button
                     onClick={() => setMetronomeActive(!metronomeActive)}
-                    className={`flex-1 flex flex-col items-center justify-center rounded border ${metronomeActive ? 'border-tactical-green bg-tactical-green/20 text-white' : 'border-gray-800 bg-gray-900 text-gray-600'}`}
+                    className={`flex-1 flex flex-col items-center justify-center rounded border ${
+                      metronomeActive ? 'border-tactical-green bg-tactical-green/20 text-white' : 'border-gray-800 bg-gray-900 text-gray-600'
+                    }`}
                 >
                     <Smartphone size={18} />
                     <span className="text-[9px] mt-1 font-mono">RITMO</span>
                 </button>
-                <button 
+                <button
                     onClick={toggleCamera}
-                    className={`flex-1 flex flex-col items-center justify-center rounded border ${cameraMode ? 'border-tactical-green bg-tactical-green/20 text-white' : 'border-gray-800 bg-gray-900 text-gray-600'}`}
+                    className={`flex-1 flex flex-col items-center justify-center rounded border ${
+                      cameraMode ? 'border-tactical-green bg-tactical-green/20 text-white' : 'border-gray-800 bg-gray-900 text-gray-600'
+                    }`}
                 >
                     <Camera size={18} />
                     <span className="text-[9px] mt-1 font-mono">VISOR</span>
                 </button>
-                <button 
+                <button
                     onClick={handlePanic}
                     className="flex-1 flex flex-col items-center justify-center rounded border border-red-900 bg-red-900/10 text-red-500"
                 >
@@ -229,32 +203,36 @@ export const SessionMode: React.FC<SessionModeProps> = ({ onComplete, onCancel, 
             {/* Main Fire Control */}
             <div className="flex-1 flex gap-4">
                 {!isActive && seconds === 0 ? (
-                <button 
+                <button
                     onClick={handleStart}
-                    className="flex-1 bg-tactical-green text-black font-black text-4xl tracking-widest rounded flex items-center justify-center shadow-[0_0_30px_rgba(16,185,129,0.3)] active:bg-emerald-400 transition-colors uppercase"
+                    className="flex-1 bg-tactical-green text-black font-black tracking-widest rounded flex flex-col items-center justify-center shadow-[0_0_30px_rgba(16,185,129,0.3)] active:bg-emerald-400 transition-colors uppercase gap-2"
                 >
-                    <Play size={48} className="mr-2" /> INICIAR
+                    <Play size={48} />
+                    <span className="text-2xl">INICIAR</span>
                 </button>
                 ) : isActive ? (
-                    <button 
+                    <button
                     onClick={handlePause}
-                    className="flex-1 bg-yellow-500 text-black font-black text-4xl tracking-widest rounded flex items-center justify-center shadow-[0_0_30px_rgba(234,179,8,0.3)] active:bg-yellow-400 transition-colors uppercase border-4 border-black"
+                    className="flex-1 bg-yellow-500 text-black font-black tracking-widest rounded flex flex-col items-center justify-center shadow-[0_0_30px_rgba(234,179,8,0.3)] active:bg-yellow-400 transition-colors uppercase border-4 border-black gap-2"
                     >
-                    <Pause size={48} className="mr-2" /> PAUSA
+                    <Pause size={48} />
+                    <span className="text-2xl">PAUSA</span>
                     </button>
                 ) : (
                     <div className="flex-1 flex gap-3">
-                    <button 
+                    <button
                         onClick={handleStart}
-                        className="w-1/3 bg-tactical-green text-black rounded flex items-center justify-center"
+                        className="w-1/3 bg-tactical-green text-black rounded flex flex-col items-center justify-center gap-1"
                     >
                         <Play size={32} />
+                        <span className="text-[9px] font-bold">SEGUIR</span>
                     </button>
-                    <button 
+                    <button
                         onClick={handleComplete}
-                        className="flex-1 bg-blue-600 text-white font-bold text-2xl tracking-widest rounded flex items-center justify-center border-2 border-blue-400 active:scale-95 transition-transform"
+                        className="flex-1 bg-blue-600 text-white font-bold text-2xl tracking-widest rounded flex flex-col items-center justify-center border-2 border-blue-400 active:scale-95 transition-transform gap-1"
                     >
-                        <Square size={24} className="mr-2" /> FIN MISIÓN
+                        <Square size={24} />
+                        <span className="text-sm">FIN MISIÓN</span>
                     </button>
                     </div>
                 )}

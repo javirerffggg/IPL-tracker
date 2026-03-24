@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Settings, Shield, Activity, MessageSquare, Menu, X, Trophy, Trash2, Calendar as CalendarIcon, Download, Zap, RefreshCw, Power, Battery } from 'lucide-react';
+import { Settings, Shield, Activity, MessageSquare, Menu, X, Trophy, Trash2, Calendar as CalendarIcon, Download, Zap, RefreshCw, Power, Send, Star, Skull, Award } from 'lucide-react';
 import { INITIAL_START_DATE, INITIAL_ACHIEVEMENTS, RANKS_THRESHOLDS, ZONES, PHASE_CONFIG, RANK_TRANSLATIONS, PHASE_TRANSLATIONS } from './constants';
 import { AppState, Rank, Phase, SessionLog } from './types';
 import { SessionMode } from './components/SessionMode';
@@ -14,12 +14,10 @@ import { fetchWeatherData } from './services/weatherService';
 // HudCard with Tactical Corners
 const HudCard: React.FC<{ children: React.ReactNode; className?: string; title?: string; rightElement?: React.ReactNode }> = ({ children, className = '', title, rightElement }) => (
   <div className={`relative bg-tactical-800 border border-gray-800 p-4 ${className}`}>
-    {/* Decorative Corners */}
     <div className="absolute top-0 left-0 w-2 h-2 border-l-2 border-t-2 border-tactical-green"></div>
     <div className="absolute top-0 right-0 w-2 h-2 border-r-2 border-t-2 border-tactical-green"></div>
     <div className="absolute bottom-0 left-0 w-2 h-2 border-l-2 border-b-2 border-tactical-green"></div>
     <div className="absolute bottom-0 right-0 w-2 h-2 border-r-2 border-b-2 border-tactical-green"></div>
-    
     {(title || rightElement) && (
       <div className="mb-3 border-b border-gray-800 pb-1 flex justify-between items-center">
          {title && <h3 className="text-xs font-mono text-tactical-green uppercase tracking-widest">{title}</h3>}
@@ -30,7 +28,7 @@ const HudCard: React.FC<{ children: React.ReactNode; className?: string; title?:
   </div>
 );
 
-// Retro Segmented Progress Bar
+// Retro Segmented Progress Bar with glow on last segment
 const RetroProgressBar: React.FC<{ value: number; max: number; label?: string; color?: string; subLabel?: string }> = ({ value, max, label, color = 'bg-tactical-green', subLabel }) => {
   const pct = Math.min(100, Math.max(0, (value / max) * 100));
   const segments = 20;
@@ -44,9 +42,13 @@ const RetroProgressBar: React.FC<{ value: number; max: number; label?: string; c
       </div>
       <div className="flex gap-0.5 h-3">
         {Array.from({ length: segments }).map((_, i) => (
-          <div 
-            key={i} 
-            className={`flex-1 ${i < filledSegments ? color : 'bg-gray-800'} transition-colors duration-300`}
+          <div
+            key={i}
+            className={`flex-1 transition-colors duration-300 ${
+              i < filledSegments
+                ? `${color} ${i === filledSegments - 1 ? 'shadow-[0_0_6px_rgba(16,185,129,0.8)]' : ''}`
+                : 'bg-gray-800'
+            }`}
           ></div>
         ))}
       </div>
@@ -70,7 +72,7 @@ const LongPressButton: React.FC<{ onLongPress: () => void; label: string; icon: 
           onLongPress();
           return 100;
         }
-        return p + 2; // Speed
+        return p + 2;
       });
     }, 20);
   };
@@ -82,7 +84,7 @@ const LongPressButton: React.FC<{ onLongPress: () => void; label: string; icon: 
   };
 
   return (
-    <button 
+    <button
       onMouseDown={startPress} onMouseUp={endPress} onMouseLeave={endPress}
       onTouchStart={startPress} onTouchEnd={endPress}
       className={`relative overflow-hidden active:scale-95 transition-transform select-none ${className}`}
@@ -96,10 +98,19 @@ const LongPressButton: React.FC<{ onLongPress: () => void; label: string; icon: 
   );
 };
 
+// Rank icon by level
+const RankIcon: React.FC<{ rank: Rank; size?: number }> = ({ rank, size = 48 }) => {
+  const rankOrder = Object.keys(RANKS_THRESHOLDS) as Rank[];
+  const idx = rankOrder.indexOf(rank);
+  if (idx >= rankOrder.length - 1) return <Skull size={size} className="text-red-400" />;
+  if (idx >= Math.floor(rankOrder.length * 0.66)) return <Star size={size} className="text-yellow-400" />;
+  if (idx >= Math.floor(rankOrder.length * 0.33)) return <Award size={size} className="text-blue-400" />;
+  return <Shield size={size} className="text-gray-500" />;
+};
+
 // --- Main App ---
 
 export default function App() {
-  // State
   const [state, setState] = useState<AppState>(() => {
     const saved = localStorage.getItem('ipl_elite_data_v2');
     return saved ? JSON.parse(saved) : {
@@ -119,6 +130,8 @@ export default function App() {
   });
 
   const [view, setView] = useState<'DASHBOARD' | 'INTEL' | 'PROFILE' | 'SETTINGS' | 'PLAN'>('DASHBOARD');
+  const [prevView, setPrevView] = useState<string>('DASHBOARD');
+  const [viewVisible, setViewVisible] = useState(true);
   const [sessionActive, setSessionActive] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [weather, setWeather] = useState<{ uv: number, temp: number } | null>(null);
@@ -127,17 +140,15 @@ export default function App() {
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<any>(null);
+  const [showAllLogs, setShowAllLogs] = useState(false);
 
-  // Swipe Logic Refs
   const touchStartX = useRef(0);
   const touchEndX = useRef(0);
 
-  // Notifications Request on Mount & PWA Install Listener
   useEffect(() => {
     if ("Notification" in window && Notification.permission !== "granted") {
         Notification.requestPermission();
     }
-
     const handler = (e: Event) => {
       e.preventDefault();
       setInstallPrompt(e);
@@ -145,6 +156,16 @@ export default function App() {
     window.addEventListener('beforeinstallprompt', handler);
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
+
+  // Animated view transition
+  const navigateTo = (newView: typeof view) => {
+    if (newView === view) return;
+    setViewVisible(false);
+    setTimeout(() => {
+      setView(newView);
+      setViewVisible(true);
+    }, 150);
+  };
 
   const sendNotification = (title: string, body: string) => {
       if ("Notification" in window && Notification.permission === "granted") {
@@ -156,14 +177,10 @@ export default function App() {
     if (!installPrompt) return;
     installPrompt.prompt();
     installPrompt.userChoice.then((choiceResult: any) => {
-      if (choiceResult.outcome === 'accepted') {
-        console.log('User accepted the install prompt');
-      }
       setInstallPrompt(null);
     });
   };
 
-  // Derived State
   const rank = useMemo(() => {
     const count = state.logs.length;
     let currentRank = Rank.RECRUIT;
@@ -178,24 +195,19 @@ export default function App() {
     const now = new Date();
     const startMidnight = new Date(start); startMidnight.setHours(0,0,0,0);
     const nowMidnight = new Date(now); nowMidnight.setHours(0,0,0,0);
-
     const diffTime = nowMidnight.getTime() - startMidnight.getTime();
     const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
     const weekIndex = Math.floor(diffDays / 7);
     const dayOfWeek = now.getDay();
     const month = now.getMonth();
-
     let phase = Phase.ATTACK;
     if (weekIndex >= 12) phase = Phase.TRANSITION;
     if (weekIndex >= 24) phase = Phase.MAINTENANCE;
-
-    // Calculate phase specific stats
     let currentPhaseWeek = 0;
     let totalPhaseWeeks = 0;
     let nextPhaseName = '';
-    
     if (phase === Phase.ATTACK) {
-        currentPhaseWeek = weekIndex + 1; // 1-based for display
+        currentPhaseWeek = weekIndex + 1;
         totalPhaseWeeks = 12;
         nextPhaseName = 'TRANSICIÓN';
     } else if (phase === Phase.TRANSITION) {
@@ -204,30 +216,24 @@ export default function App() {
         nextPhaseName = 'MANTENIMIENTO';
     } else {
         currentPhaseWeek = weekIndex - 23;
-        totalPhaseWeeks = 52; // Symbolic
+        totalPhaseWeeks = 52;
         nextPhaseName = 'REINICIO';
     }
-
     const weeksUntilNextPhase = totalPhaseWeeks - currentPhaseWeek;
-
     let isActiveWeek = true;
     let statusMessage = "OPERATIVO";
     let isShoulderWeek = false;
-
     if (state.settings.isPaused) {
         isActiveWeek = false;
         statusMessage = "PROTOCOLO EN PAUSA";
-    }
-    else if (phase === Phase.ATTACK) {
+    } else if (phase === Phase.ATTACK) {
        isShoulderWeek = (weekIndex % 3 === 0);
-    } 
-    else if (phase === Phase.TRANSITION) {
+    } else if (phase === Phase.TRANSITION) {
        isActiveWeek = (weekIndex % 2 !== 0);
        isShoulderWeek = true;
        if (!isActiveWeek) statusMessage = "SEMANA DE DESCANSO";
-    } 
-    else if (phase === Phase.MAINTENANCE) {
-       if (month === 7) { 
+    } else if (phase === Phase.MAINTENANCE) {
+       if (month === 7) {
          isActiveWeek = false;
          statusMessage = "VACACIONES DE AGOSTO";
        } else {
@@ -236,14 +242,11 @@ export default function App() {
          if (!isActiveWeek) statusMessage = "EN ESPERA (MANTENIMIENTO)";
        }
     }
-
     if (diffDays < 0) {
       statusMessage = "PRE-OPERATIVO";
       isActiveWeek = false;
     }
-
     let nextSessionData = { date: '', zones: [] as string[], type: '' };
-    
     if (!isActiveWeek) {
         nextSessionData = { date: 'EN ESPERA', zones: [], type: statusMessage };
     } else {
@@ -258,27 +261,14 @@ export default function App() {
             nextSessionData = { date: `DOMINGO ${nextDate.getDate()}`, zones: ZONES.UPPER, type: 'PRÓX: TORSO' };
         }
     }
-
-    return { 
-        phase, 
-        weekIndex, 
-        isActiveWeek, 
-        nextSessionData, 
-        statusMessage,
-        currentPhaseWeek,
-        totalPhaseWeeks,
-        weeksUntilNextPhase,
-        nextPhaseName
-    };
+    return { phase, weekIndex, isActiveWeek, nextSessionData, statusMessage, currentPhaseWeek, totalPhaseWeeks, weeksUntilNextPhase, nextPhaseName };
   }, [state.settings.startDate, state.settings.isPaused]);
 
-  // Streak, Body Load & Greeting
   const streak = useMemo(() => {
     if (state.logs.length === 0) return 0;
     const lastLog = new Date(state.logs[0].date);
     const now = new Date();
-    const diff = Math.floor((now.getTime() - lastLog.getTime()) / (1000*3600*24));
-    return diff;
+    return Math.floor((now.getTime() - lastLog.getTime()) / (1000*3600*24));
   }, [state.logs]);
 
   const bodyLoad = useMemo(() => {
@@ -286,7 +276,6 @@ export default function App() {
       const lastLog = new Date(state.logs[0].date);
       const now = new Date();
       const hoursDiff = (now.getTime() - lastLog.getTime()) / (1000 * 60 * 60);
-      
       if (hoursDiff < 24) return { status: 'CRÍTICO', color: 'text-red-500', bg: 'bg-red-500' };
       if (hoursDiff < 48) return { status: 'RECUPERANDO', color: 'text-yellow-500', bg: 'bg-yellow-500' };
       return { status: 'LISTO', color: 'text-tactical-green', bg: 'bg-tactical-green' };
@@ -299,23 +288,18 @@ export default function App() {
     return "TURNO DE NOCHE, COMANDANTE";
   }, []);
 
-  // Effects
   useEffect(() => {
     localStorage.setItem('ipl_elite_data_v2', JSON.stringify(state));
   }, [state]);
 
   useEffect(() => {
-    // Immediate Initial Load based on current state (no network needed)
     const initialBriefing = getContextAwareBriefing(timeline.phase, new Date().getDay(), 0);
     setBriefing(initialBriefing);
-
-    // Update with weather context if available
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(async (pos) => {
         const data = await fetchWeatherData(pos.coords.latitude, pos.coords.longitude);
         if (data) {
           setWeather({ uv: data.uvIndex, temp: data.temperature });
-          // Re-fetch briefing with accurate UV data
           const updatedBriefing = getContextAwareBriefing(timeline.phase, new Date().getDay(), data.uvIndex);
           setBriefing(updatedBriefing);
         }
@@ -323,7 +307,6 @@ export default function App() {
     }
   }, [rank, timeline.phase]);
 
-  // Handlers
   const handleSessionComplete = (duration: number, zones: string[]) => {
     const newVal = zones.some(z => ZONES.LOWER.includes(z)) ? state.settings.sessionValueLegs : state.settings.sessionValueTorso;
     const newLog: SessionLog = {
@@ -334,7 +317,6 @@ export default function App() {
       completed: true,
       uvIndex: weather?.uv
     };
-
     const newAchievements = [...state.achievements];
     if (state.logs.length === 0) newAchievements.find(a => a.id === 'first_blood')!.unlocked = true;
     if (zones.some(z => z.includes('Hombros') || z.includes('Shoulders'))) newAchievements.find(a => a.id === 'sniper')!.unlocked = true;
@@ -342,13 +324,7 @@ export default function App() {
     if (duration > 40 * 60) newAchievements.find(a => a.id === 'endurance')!.unlocked = true;
     const newSavings = state.totalSavings + newVal;
     if (newSavings >= state.settings.machineCost) newAchievements.find(a => a.id === 'roi_breached')!.unlocked = true;
-
-    setState(prev => ({
-      ...prev,
-      logs: [newLog, ...prev.logs],
-      achievements: newAchievements,
-      totalSavings: newSavings
-    }));
+    setState(prev => ({ ...prev, logs: [newLog, ...prev.logs], achievements: newAchievements, totalSavings: newSavings }));
     setSessionActive(false);
   };
 
@@ -370,40 +346,30 @@ export default function App() {
   };
 
   const togglePause = () => {
-    setState(prev => ({
-        ...prev,
-        settings: { ...prev.settings, isPaused: !prev.settings.isPaused }
-    }));
+    setState(prev => ({ ...prev, settings: { ...prev.settings, isPaused: !prev.settings.isPaused } }));
   };
 
-  // Swipe Navigation
   const handleTouchStart = (e: React.TouchEvent) => { touchStartX.current = e.targetTouches[0].clientX; };
   const handleTouchEnd = (e: React.TouchEvent) => {
     touchEndX.current = e.changedTouches[0].clientX;
     const diff = touchStartX.current - touchEndX.current;
     const views: Array<'DASHBOARD' | 'PLAN' | 'INTEL' | 'PROFILE' | 'SETTINGS'> = ['DASHBOARD', 'PLAN', 'INTEL', 'PROFILE', 'SETTINGS'];
     const currentIdx = views.indexOf(view);
-    
-    if (Math.abs(diff) > 50) { // Threshold
-        if (diff > 0 && currentIdx < views.length - 1) {
-            setView(views[currentIdx + 1]);
-        } else if (diff < 0 && currentIdx > 0) {
-            setView(views[currentIdx - 1]);
-        }
+    if (Math.abs(diff) > 50) {
+        if (diff > 0 && currentIdx < views.length - 1) navigateTo(views[currentIdx + 1]);
+        else if (diff < 0 && currentIdx > 0) navigateTo(views[currentIdx - 1]);
     }
   };
 
-  // Icons based on phase
   const PhaseIcon = useMemo(() => {
     if (timeline.phase === Phase.ATTACK) return Zap;
     if (timeline.phase === Phase.TRANSITION) return RefreshCw;
     return Shield;
   }, [timeline.phase]);
 
-  // Views
   if (sessionActive) {
     return (
-      <SessionMode 
+      <SessionMode
         onComplete={handleSessionComplete}
         onCancel={() => setSessionActive(false)}
         targetZones={timeline.nextSessionData.zones}
@@ -413,11 +379,11 @@ export default function App() {
   }
 
   return (
-    <div 
+    <div
         className="min-h-screen font-sans pb-24 selection:bg-tactical-green selection:text-black pt-safe"
         onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}
     >
-      {/* Top Bar - Now Relative/Normal Flow to scroll away */}
+      {/* Top Bar */}
       <header className="w-full bg-tactical-900/90 backdrop-blur border-b border-gray-800 px-4 py-3 pt-safe">
         <div className="max-w-lg mx-auto w-full flex justify-between items-center">
           <div className="flex items-center gap-2">
@@ -433,23 +399,43 @@ export default function App() {
         </div>
       </header>
 
-      {/* Menu Overlay */}
+      {/* Slide-in Drawer Menu */}
+      <div
+        className={`fixed inset-y-0 left-0 w-72 bg-black/98 z-40 flex flex-col pt-20 px-6 gap-2 font-mono border-r border-gray-800 shadow-2xl transform transition-transform duration-300 ease-in-out ${
+          menuOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        <div className="text-[9px] text-gray-600 tracking-widest mb-4 uppercase">// Navegación</div>
+        {['DASHBOARD', 'PLAN', 'INTEL', 'PROFILE', 'SETTINGS'].map((v) => (
+          <button
+            key={v}
+            onClick={() => { navigateTo(v as any); setMenuOpen(false); }}
+            className={`text-left py-4 border-b border-gray-800 text-sm hover:text-tactical-green transition-colors ${
+              view === v
+                ? 'text-tactical-green pl-4 border-l-4 border-l-tactical-green'
+                : 'text-gray-400'
+            }`}
+          >
+            {v}
+          </button>
+        ))}
+      </div>
+      {/* Drawer backdrop */}
       {menuOpen && (
-        <div className="fixed inset-0 top-16 bg-black/95 z-30 p-6 flex flex-col gap-6 font-mono text-xl animate-scanline pt-20">
-          {['DASHBOARD', 'PLAN', 'INTEL', 'PROFILE', 'SETTINGS'].map((v) => (
-             <button key={v} onClick={() => { setView(v as any); setMenuOpen(false); }} className={`text-left py-4 border-b border-gray-800 hover:text-tactical-green ${view === v ? 'text-tactical-green pl-4 border-l-4 border-l-tactical-green' : 'text-gray-400'}`}>
-                {v}
-             </button>
-          ))}
-        </div>
+        <div
+          className="fixed inset-0 z-30 bg-black/50 backdrop-blur-sm"
+          onClick={() => setMenuOpen(false)}
+        />
       )}
 
-      {/* Main Content Area - Centered Container */}
-      <main className="pt-4 px-4 max-w-lg mx-auto space-y-6">
-        
-        {/* Greeting Banner */}
+      {/* Main Content with fade transition */}
+      <main
+        className={`pt-4 px-4 max-w-lg mx-auto space-y-6 transition-opacity duration-150 ${
+          viewVisible ? 'opacity-100' : 'opacity-0'
+        }`}
+      >
         {view === 'DASHBOARD' && (
-            <div className="text-[10px] font-mono text-tactical-green/60 text-center tracking-[0.2em] mb-2 border-b border-tactical-green/20 pb-2">
+            <div className="text-[10px] font-mono text-tactical-green/60 text-center tracking-[0.2em] mb-2 border-b border-tactical-green/20 pb-2 animate-pulse">
                 {greeting}
             </div>
         )}
@@ -462,7 +448,6 @@ export default function App() {
                 <div className="text-2xl font-bold text-white font-mono truncate">{RANK_TRANSLATIONS[rank]}</div>
                 <div className="text-xs text-gray-500 font-mono mt-1">{state.logs.length} MISIONES</div>
               </HudCard>
-              
               <HudCard title="CARGA BIOLÓGICA">
                   <div className={`text-xl font-bold font-mono ${bodyLoad.color}`}>{bodyLoad.status}</div>
                   <div className="flex items-center gap-2 mt-2">
@@ -473,8 +458,8 @@ export default function App() {
             </div>
 
             {/* Row 2: Phase Command Center */}
-            <HudCard 
-                title="ESTADO DE FASE" 
+            <HudCard
+                title="ESTADO DE FASE"
                 className="border-l-4 border-l-tactical-green"
                 rightElement={
                     <button onClick={togglePause} className={`${state.settings.isPaused ? 'text-red-500' : 'text-gray-600 hover:text-white'}`}>
@@ -483,11 +468,15 @@ export default function App() {
                 }
             >
                 <div className="flex items-center gap-4 mb-4">
-                    <div className={`p-3 rounded-sm border ${state.settings.isPaused ? 'border-red-900 bg-red-900/10 text-red-500' : 'border-tactical-green bg-tactical-green/10 text-tactical-green'}`}>
+                    <div className={`p-3 rounded-sm border ${
+                      state.settings.isPaused ? 'border-red-900 bg-red-900/10 text-red-500' : 'border-tactical-green bg-tactical-green/10 text-tactical-green'
+                    }`}>
                         <PhaseIcon size={28} strokeWidth={1.5} />
                     </div>
                     <div>
-                        <div className={`text-2xl font-bold font-mono tracking-tight ${state.settings.isPaused ? 'text-red-500' : 'text-white'}`}>
+                        <div className={`text-2xl font-bold font-mono tracking-tight ${
+                          state.settings.isPaused ? 'text-red-500' : 'text-white'
+                        }`}>
                             {state.settings.isPaused ? 'PAUSADO' : timeline.phase}
                         </div>
                         <div className="text-[10px] font-mono text-gray-400">
@@ -495,11 +484,10 @@ export default function App() {
                         </div>
                     </div>
                 </div>
-
                 {!state.settings.isPaused && (
-                    <RetroProgressBar 
-                        value={timeline.currentPhaseWeek} 
-                        max={timeline.totalPhaseWeeks} 
+                    <RetroProgressBar
+                        value={timeline.currentPhaseWeek}
+                        max={timeline.totalPhaseWeeks}
                         label={`SEMANA ${timeline.currentPhaseWeek} DE ${timeline.totalPhaseWeeks}`}
                         subLabel={`${Math.round((timeline.currentPhaseWeek/timeline.totalPhaseWeeks)*100)}%`}
                     />
@@ -513,7 +501,9 @@ export default function App() {
               </div>
               {weather && (
                 <div className="flex items-center gap-4 mt-3 text-xs font-mono bg-black/50 p-2 border border-gray-700">
-                   <span className={`px-2 py-0.5 rounded ${weather.uv > 3 ? 'bg-red-900 text-red-200' : 'bg-emerald-900 text-emerald-200'}`}>
+                   <span className={`px-2 py-0.5 rounded ${
+                     weather.uv > 3 ? 'bg-red-900 text-red-200' : 'bg-emerald-900 text-emerald-200'
+                   }`}>
                      UV: {weather.uv.toFixed(1)}
                    </span>
                    <span>TEMP: {weather.temp}°C</span>
@@ -521,25 +511,29 @@ export default function App() {
               )}
             </HudCard>
 
-            {/* Next Mission CTA */}
+            {/* Next Mission CTA – hero button */}
             <div className="relative group">
               {timeline.isActiveWeek && (
                   <div className="absolute -inset-1 bg-gradient-to-r from-tactical-green to-blue-600 rounded-lg blur opacity-25 group-hover:opacity-75 transition duration-1000 group-hover:duration-200"></div>
               )}
-              <button 
+              <button
                 onClick={() => setSessionActive(true)}
                 disabled={!timeline.isActiveWeek}
-                className={`relative w-full bg-tactical-800 border border-gray-700 p-6 flex items-center justify-between rounded shadow-2xl transition-all ${!timeline.isActiveWeek ? 'opacity-50 cursor-not-allowed grayscale' : 'hover:bg-tactical-700'}`}
+                className={`relative w-full bg-tactical-800 border border-gray-700 p-8 flex items-center justify-between rounded shadow-2xl transition-all ${
+                  !timeline.isActiveWeek ? 'opacity-50 cursor-not-allowed grayscale' : 'hover:bg-tactical-700'
+                }`}
               >
                 <div className="text-left">
                   <div className="text-xs text-blue-400 font-mono mb-1 tracking-widest">
                     {timeline.isActiveWeek ? `PRÓXIMA OPERACIÓN: ${timeline.nextSessionData.date}` : 'ESTADO DE FLOTA'}
                   </div>
-                  <div className="text-2xl font-bold text-white uppercase font-mono">{timeline.nextSessionData.type}</div>
+                  <div className="text-3xl font-black text-white uppercase font-mono tracking-tight">{timeline.nextSessionData.type}</div>
                   <div className="text-xs text-gray-400 mt-1 max-w-[200px] truncate">{timeline.nextSessionData.zones.join(', ')}</div>
                 </div>
-                <div className={`h-14 w-14 rounded-full flex items-center justify-center text-black shadow-[0_0_15px_rgba(16,185,129,0.4)] ${timeline.isActiveWeek ? 'bg-tactical-green' : 'bg-gray-600'}`}>
-                  <Activity size={28} />
+                <div className={`h-16 w-16 rounded-full flex items-center justify-center text-black shadow-[0_0_20px_rgba(16,185,129,0.5)] ${
+                  timeline.isActiveWeek ? 'bg-tactical-green' : 'bg-gray-600'
+                }`}>
+                  <Activity size={32} />
                 </div>
               </button>
             </div>
@@ -553,15 +547,17 @@ export default function App() {
                  </div>
                  <div className="text-right">
                    <div className="text-gray-500 text-[10px] font-mono uppercase">ESTADO</div>
-                   <div className={`font-bold font-mono ${state.totalSavings >= state.settings.machineCost ? 'text-tactical-green' : 'text-yellow-500'}`}>
+                   <div className={`font-bold font-mono ${
+                     state.totalSavings >= state.settings.machineCost ? 'text-tactical-green' : 'text-yellow-500'
+                   }`}>
                      {state.totalSavings >= state.settings.machineCost ? 'PROFIT' : 'DEBT'}
                    </div>
                  </div>
                </div>
-               <RetroProgressBar 
-                 value={state.totalSavings} 
-                 max={state.settings.machineCost * 1.2} 
-                 label="AMORTIZACIÓN" 
+               <RetroProgressBar
+                 value={state.totalSavings}
+                 max={state.settings.machineCost * 1.2}
+                 label="AMORTIZACIÓN"
                  color={state.totalSavings >= state.settings.machineCost ? 'bg-tactical-green' : 'bg-yellow-600'}
                />
             </HudCard>
@@ -593,24 +589,33 @@ export default function App() {
                     const isUser = msg.startsWith('User:');
                     return (
                       <div key={i} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[85%] p-3 rounded-sm text-sm font-mono border ${isUser ? 'bg-tactical-800 text-white border-gray-600' : 'bg-tactical-green/10 text-emerald-100 border-tactical-green/30'}`}>
+                        <div className={`max-w-[85%] p-3 rounded-sm text-sm font-mono border ${
+                          isUser
+                            ? 'bg-tactical-800 text-white border-gray-600'
+                            : 'bg-emerald-950 text-emerald-100 border-tactical-green/30'
+                        }`}>
                            <span className="text-[10px] opacity-50 block mb-1">{isUser ? 'CMD' : 'INTEL'} &gt;&gt;</span>
                            {msg.replace(/^(User:|Model:)\s*/, '')}
                         </div>
                       </div>
-                    )
+                    );
                   })}
                   {chatLoading && <div className="text-xs text-tactical-green animate-pulse font-mono">RECIBIENDO TRANSMISIÓN...</div>}
                </div>
             </HudCard>
             <form onSubmit={handleChatSubmit} className="flex gap-2">
-               <input 
+               <input
                  value={chatInput}
                  onChange={(e) => setChatInput(e.target.value)}
                  placeholder="COMANDO..."
                  className="flex-1 bg-black border border-gray-700 p-4 text-white focus:border-tactical-green outline-none font-mono text-sm"
                />
-               <button type="submit" className="bg-tactical-green text-black px-6 font-bold font-mono hover:bg-emerald-400">TX</button>
+               <button
+                 type="submit"
+                 className="bg-tactical-green text-black px-5 font-bold font-mono hover:bg-emerald-400 flex items-center gap-2 min-w-[56px] justify-center"
+               >
+                 <Send size={16} />
+               </button>
             </form>
           </div>
         )}
@@ -619,30 +624,36 @@ export default function App() {
           <div className="space-y-6">
              <div className="flex items-center gap-6 border-b border-gray-800 pb-6">
                 <div className="w-24 h-24 bg-tactical-800 rounded-sm flex items-center justify-center border border-gray-700 shadow-lg">
-                  <Shield size={48} className="text-gray-500" />
+                  <RankIcon rank={rank} size={48} />
                 </div>
                 <div>
                    <h2 className="text-3xl font-bold font-mono tracking-tighter text-white">{RANK_TRANSLATIONS[rank]}</h2>
                    <p className="text-gray-500 font-mono text-xs mt-1">ID: OPS-{state.logs.length.toString().padStart(3, '0')}</p>
                 </div>
              </div>
-             
+
              <BodyHeatmap logs={state.logs} />
 
+             {/* Achievements – 3 cols for readability */}
              <HudCard title="CONDECORACIONES">
-                <div className="grid grid-cols-4 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                    {state.achievements.map(a => (
-                     <div key={a.id} className={`aspect-square rounded-sm flex flex-col items-center justify-center p-1 text-center border ${a.unlocked ? 'bg-tactical-green/10 border-tactical-green text-tactical-green' : 'bg-black border-gray-800 text-gray-800'}`}>
-                        <Trophy size={18} className="mb-1" />
-                        <span className="text-[7px] font-mono leading-tight uppercase">{a.title}</span>
+                     <div key={a.id} className={`aspect-square rounded-sm flex flex-col items-center justify-center p-2 text-center border ${
+                       a.unlocked
+                         ? 'bg-tactical-green/10 border-tactical-green text-tactical-green'
+                         : 'bg-black border-gray-800 text-gray-800'
+                     }`}>
+                        <Trophy size={20} className="mb-1" />
+                        <span className="text-[9px] font-mono leading-tight uppercase">{a.title}</span>
                      </div>
                    ))}
                 </div>
              </HudCard>
 
+             {/* Mission Logs with expand toggle */}
              <HudCard title="LOGS DE MISIÓN">
                <div className="space-y-2">
-                 {state.logs.slice(0, 5).map(log => (
+                 {(showAllLogs ? state.logs : state.logs.slice(0, 5)).map(log => (
                    <div key={log.id} className="flex justify-between items-center text-sm border-b border-gray-800 pb-2 last:border-0 font-mono">
                       <div>
                         <div className="text-white">{new Date(log.date).toLocaleDateString('es-ES', {month:'short', day:'numeric'})}</div>
@@ -658,6 +669,14 @@ export default function App() {
                  ))}
                  {state.logs.length === 0 && <div className="text-gray-600 text-xs italic">SIN DATOS</div>}
                </div>
+               {state.logs.length > 5 && (
+                 <button
+                   onClick={() => setShowAllLogs(!showAllLogs)}
+                   className="mt-3 w-full text-center text-[10px] font-mono text-tactical-green border border-tactical-green/30 py-2 hover:bg-tactical-green/10 transition-colors"
+                 >
+                   {showAllLogs ? '▲ COLAPSAR' : `▼ VER TODO (${state.logs.length})`}
+                 </button>
+               )}
              </HudCard>
           </div>
         )}
@@ -667,8 +686,8 @@ export default function App() {
             <HudCard title="PARAMETROS DE MISIÓN">
                <label className="block mb-6">
                  <span className="text-xs text-gray-500 font-mono block mb-2 uppercase">Inicio de Operación</span>
-                 <input 
-                   type="date" 
+                 <input
+                   type="date"
                    value={state.settings.startDate.split('T')[0]}
                    onChange={(e) => setState(prev => ({ ...prev, settings: { ...prev.settings, startDate: new Date(e.target.value).toISOString() } }))}
                    className="w-full bg-black border border-gray-700 p-3 text-white font-mono rounded-sm focus:border-tactical-green outline-none"
@@ -677,7 +696,7 @@ export default function App() {
                <div className="grid grid-cols-2 gap-4">
                  <label>
                    <span className="text-xs text-gray-500 font-mono block mb-2 uppercase">Coste Equipo (€)</span>
-                   <input 
+                   <input
                      type="number"
                      value={state.settings.machineCost}
                      onChange={(e) => setState(prev => ({ ...prev, settings: { ...prev.settings, machineCost: Number(e.target.value) } }))}
@@ -686,7 +705,7 @@ export default function App() {
                  </label>
                  <label>
                    <span className="text-xs text-gray-500 font-mono block mb-2 uppercase">Valor Sesión (€)</span>
-                   <input 
+                   <input
                      type="number"
                      value={state.settings.sessionValueLegs}
                      onChange={(e) => setState(prev => ({ ...prev, settings: { ...prev.settings, sessionValueLegs: Number(e.target.value) } }))}
@@ -699,7 +718,7 @@ export default function App() {
             <HudCard title="SISTEMA">
                 <label className="flex items-center justify-between mb-4">
                     <span className="text-xs text-gray-500 font-mono uppercase">Intensidad Haptica</span>
-                    <select 
+                    <select
                         value={state.settings.vibrationIntensity || 'HIGH'}
                         onChange={(e) => setState(prev => ({ ...prev, settings: { ...prev.settings, vibrationIntensity: e.target.value as 'LOW' | 'HIGH' } }))}
                         className="bg-black border border-gray-700 text-white font-mono text-xs p-2 rounded-sm"
@@ -711,7 +730,7 @@ export default function App() {
             </HudCard>
 
             {installPrompt && (
-              <button 
+              <button
                 onClick={handleInstallClick}
                 className="w-full border border-tactical-green bg-tactical-green/10 text-tactical-green p-4 flex items-center justify-center font-bold font-mono tracking-widest hover:bg-tactical-green/20"
               >
@@ -719,13 +738,13 @@ export default function App() {
               </button>
             )}
 
-            <LongPressButton 
-                label="RESET DE FÁBRICA" 
-                icon={<Trash2 size={16} />} 
+            <LongPressButton
+                label="RESET DE FÁBRICA"
+                icon={<Trash2 size={16} />}
                 onLongPress={resetData}
                 className="w-full border border-red-900 bg-red-900/10 text-red-500 p-4 flex items-center justify-center font-bold font-mono tracking-widest hover:bg-red-900/20"
             />
-            
+
             <div className="text-center text-[10px] text-gray-800 font-mono pt-4">
               IPL TRACKER ELITE v3.0<br/>
               PROTOCOLO DOMINGO-LUNES
@@ -735,7 +754,7 @@ export default function App() {
 
       </main>
 
-      {/* Bottom Nav */}
+      {/* Bottom Nav with active pill indicator */}
       <nav className="fixed bottom-0 w-full bg-black border-t border-gray-800 pb-safe z-40 bg-opacity-95 backdrop-blur-md">
         <div className="max-w-lg mx-auto flex justify-around p-2">
           {[
@@ -745,10 +764,14 @@ export default function App() {
               { id: 'PROFILE', icon: Trophy, label: 'RECORD' },
               { id: 'SETTINGS', icon: Settings, label: 'CONF' },
           ].map((item) => (
-              <button 
+              <button
                   key={item.id}
-                  onClick={() => setView(item.id as any)} 
-                  className={`flex flex-col items-center p-2 rounded transition-colors ${view === item.id ? 'text-tactical-green' : 'text-gray-600'}`}
+                  onClick={() => navigateTo(item.id as any)}
+                  className={`flex flex-col items-center p-2 rounded-lg transition-colors ${
+                    view === item.id
+                      ? 'text-tactical-green bg-tactical-green/15 border-t-2 border-t-tactical-green'
+                      : 'text-gray-600'
+                  }`}
               >
                   <item.icon size={20} strokeWidth={view === item.id ? 2.5 : 1.5} />
                   <span className="text-[9px] mt-1 font-mono tracking-wider">{item.label}</span>
